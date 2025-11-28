@@ -1,0 +1,95 @@
+<!DOCTYPE html>
+<html lang="sk">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ESP32 Teplotná Databáza</title>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+    <style>
+        body { font-family: sans-serif; display: flex; justify-content: center; padding: 20px; background-color: #f4f4f4; }
+        .container { width: 80%; max-width: 900px; background: white; padding: 20px; border-radius: 8px; box-shadow: 0 4px 6px rgba(0,0,0,0.1); }
+        h1 { text-align: center; color: #333; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>Aktuálne Teplotné Záznamy</h1>
+        <canvas id="teplotaGraf"></canvas>
+        <p id="status" style="text-align: center; color: gray;"></p>
+    </div>
+
+    <script>
+        const API_URL = '/.netlify/functions/teplota-citaj'; // Volanie Netlify Function
+        let teplotaGraf; // Premenná pre inštanciu grafu
+
+        async function nacitajACitujDatu() {
+            const statusElement = document.getElementById('status');
+            statusElement.textContent = 'Načítavam dáta...';
+
+            try {
+                const response = await fetch(API_URL);
+                if (!response.ok) {
+                    throw new Error(`HTTP chyba! Status: ${response.status}`);
+                }
+                const data = await response.json();
+
+                if (data.length === 0) {
+                    statusElement.textContent = 'Zatiaľ neboli zaznamenané žiadne dáta.';
+                    return;
+                }
+
+                // Dáta sú vo formáte [{time: 1672531200000, value: 25.5}, ...]
+                const labels = data.map(item => new Date(item.time).toLocaleTimeString('sk-SK', {hour: '2-digit', minute:'2-digit', day: 'numeric', month: 'numeric'}));
+                const hodnoty = data.map(item => item.value);
+
+                vykresliGraf(labels, hodnoty);
+                statusElement.textContent = `Posledná aktualizácia: ${new Date().toLocaleTimeString('sk-SK')}`;
+
+            } catch (error) {
+                console.error('Chyba pri získavaní dát:', error);
+                statusElement.textContent = `Chyba pri načítavaní dát: ${error.message}`;
+            }
+        }
+
+        function vykresliGraf(labels, data) {
+            const ctx = document.getElementById('teplotaGraf').getContext('2d');
+
+            // Ak graf už existuje, zničíme ho, aby sme ho mohli prekresliť
+            if (teplotaGraf) {
+                teplotaGraf.destroy();
+            }
+
+            teplotaGraf = new Chart(ctx, {
+                type: 'line',
+                data: {
+                    labels: labels,
+                    datasets: [{
+                        label: 'Teplota (°C)',
+                        data: data,
+                        borderColor: 'rgb(75, 192, 192)',
+                        tension: 0.1,
+                        fill: false
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    scales: {
+                        y: {
+                            beginAtZero: false,
+                            title: {
+                                display: true,
+                                text: 'Teplota (°C)'
+                            }
+                        }
+                    }
+                }
+            });
+        }
+
+        // Spustenie funkcie pri načítaní stránky
+        nacitajACitujDatu();
+        // Nastavenie automatickej aktualizácie každých 5 minút (300 000 ms)
+        setInterval(nacitajACitujDatu, 300000); 
+    </script>
+</body>
+</html>

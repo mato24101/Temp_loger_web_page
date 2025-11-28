@@ -1,0 +1,36 @@
+const faunadb = require('faunadb');
+const q = faunadb.query;
+
+const client = new faunadb.Client({ secret: process.env.FAUNA_SECRET_KEY });
+
+exports.handler = async (event, context) => {
+    try {
+        // 1. Vytvorenie indexu pre získanie všetkých záznamov zoradených podľa času
+        // POZNÁMKA: Musíte tento index vytvoriť manuálne vo FaunaDB: 
+        // Index Name: 'all_readings', Collection: 'readings', Terms: [], Values: [{ field: ['data', 'timestamp'] }]
+        const result = await client.query(
+            q.Map(
+                q.Paginate(q.Match(q.Index('all_readings')), { size: 100 }), // Získame posledných 100 záznamov
+                q.Lambda('ref', q.Get(q.Var('ref')))
+            )
+        );
+
+        // 2. Extrahovanie len dôležitých dát
+        const readings = result.data.map(item => ({
+            time: item.data.timestamp,
+            value: item.data.value,
+        }));
+
+        return {
+            statusCode: 200,
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(readings),
+        };
+    } catch (error) {
+        console.error('Chyba pri čítaní dát:', error);
+        return {
+            statusCode: 500,
+            body: JSON.stringify({ error: 'Chyba pri čítaní z databázy' }),
+        };
+    }
+};

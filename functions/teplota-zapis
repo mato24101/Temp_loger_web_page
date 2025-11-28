@@ -1,0 +1,49 @@
+const faunadb = require('faunadb');
+const q = faunadb.query;
+
+// Táto funkcia získa tajný kľúč z premenných prostredia Netlify
+const client = new faunadb.Client({ secret: process.env.FAUNA_SECRET_KEY });
+
+exports.handler = async (event, context) => {
+    // 1. Kontrola, či ide o POST požiadavku
+    if (event.httpMethod !== 'POST') {
+        return { statusCode: 405, body: 'Metóda nie je povolená' };
+    }
+
+    try {
+        // 2. Spracovanie prichádzajúcich dát z ESP32
+        const data = JSON.parse(event.body);
+        const { teplota } = data; // Očakávame dáta vo formáte {"teplota": 25.5}
+
+        if (teplota === undefined) {
+             return { statusCode: 400, body: 'Chýba pole "teplota"' };
+        }
+
+        // 3. Vytvorenie záznamu pre uloženie
+        const record = {
+            data: {
+                value: parseFloat(teplota),
+                // Použijeme časovú známku z FaunaDB, aby sme sa vyhli problémom s časom na ESP32
+                timestamp: Date.now(), 
+            }
+        };
+
+        // 4. Uloženie do FaunaDB
+        const result = await client.query(
+            q.Create(q.Collection('readings'), record)
+        );
+
+        console.log('Záznam úspešne uložený:', result.ref.id);
+
+        return {
+            statusCode: 200,
+            body: JSON.stringify({ message: 'Zápis úspešný', id: result.ref.id }),
+        };
+    } catch (error) {
+        console.error('Chyba pri zápise dát:', error);
+        return {
+            statusCode: 500,
+            body: JSON.stringify({ error: 'Interná chyba servera' }),
+        };
+    }
+};
