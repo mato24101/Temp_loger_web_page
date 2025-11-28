@@ -1,17 +1,20 @@
-const faunadb = require('faunadb');
-const q = faunadb.query;
+// teplota-zapis.js
 
-// Táto funkcia získa tajný kľúč z premenných prostredia Netlify
-const client = new faunadb.Client({ secret: process.env.FAUNA_SECRET_KEY });
+const { createClient } = require('@supabase/supabase-js');
 
-exports.handler = async (event, context) => {
-    // 1. Kontrola, či ide o POST požiadavku
+// Klient Supabase používa premenné prostredia
+const supabaseUrl = process.env.SUPABASE_URL;
+// Používame tajný Service Role Key, ktorý nikdy neuvidí klient (ESP32)
+const supabaseKey = process.env.SUPABASE_SERVICE_KEY; 
+
+const supabase = createClient(supabaseUrl, supabaseKey);
+
+exports.handler = async (event) => {
     if (event.httpMethod !== 'POST') {
         return { statusCode: 405, body: 'Metóda nie je povolená' };
     }
 
     try {
-        // 2. Spracovanie prichádzajúcich dát z ESP32
         const data = JSON.parse(event.body);
         const { teplota } = data; // Očakávame dáta vo formáte {"teplota": 25.5}
 
@@ -19,31 +22,22 @@ exports.handler = async (event, context) => {
              return { statusCode: 400, body: 'Chýba pole "teplota"' };
         }
 
-        // 3. Vytvorenie záznamu pre uloženie
-        const record = {
-            data: {
-                value: parseFloat(teplota),
-                // Použijeme časovú známku z FaunaDB, aby sme sa vyhli problémom s časom na ESP32
-                timestamp: Date.now(), 
-            }
-        };
+        // Vloženie dát do tabuľky 'readings'
+        const { error } = await supabase
+            .from('readings')
+            .insert({ value: parseFloat(teplota) }); // created_at sa pridá automaticky
 
-        // 4. Uloženie do FaunaDB
-        const result = await client.query(
-            q.Create(q.Collection('readings'), record)
-        );
-
-        console.log('Záznam úspešne uložený:', result.ref.id);
+        if (error) throw error;
 
         return {
             statusCode: 200,
-            body: JSON.stringify({ message: 'Zápis úspešný', id: result.ref.id }),
+            body: JSON.stringify({ message: 'Zápis úspešný' }),
         };
     } catch (error) {
         console.error('Chyba pri zápise dát:', error);
         return {
             statusCode: 500,
-            body: JSON.stringify({ error: 'Interná chyba servera' }),
+            body: JSON.stringify({ error: 'Interná chyba servera', details: error.message }),
         };
     }
 };

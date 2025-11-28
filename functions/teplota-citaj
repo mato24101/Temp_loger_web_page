@@ -1,24 +1,27 @@
-const faunadb = require('faunadb');
-const q = faunadb.query;
+// teplota-citaj.js
 
-const client = new faunadb.Client({ secret: process.env.FAUNA_SECRET_KEY });
+const { createClient } = require('@supabase/supabase-js');
 
-exports.handler = async (event, context) => {
+const supabaseUrl = process.env.SUPABASE_URL;
+const supabaseKey = process.env.SUPABASE_SERVICE_KEY; 
+
+const supabase = createClient(supabaseUrl, supabaseKey);
+
+exports.handler = async () => {
     try {
-        // 1. Vytvorenie indexu pre získanie všetkých záznamov zoradených podľa času
-        // POZNÁMKA: Musíte tento index vytvoriť manuálne vo FaunaDB: 
-        // Index Name: 'all_readings', Collection: 'readings', Terms: [], Values: [{ field: ['data', 'timestamp'] }]
-        const result = await client.query(
-            q.Map(
-                q.Paginate(q.Match(q.Index('all_readings')), { size: 100 }), // Získame posledných 100 záznamov
-                q.Lambda('ref', q.Get(q.Var('ref')))
-            )
-        );
+        // Získanie posledných 100 záznamov, zoradených od najnovších
+        const { data, error } = await supabase
+            .from('readings')
+            .select('created_at, value') // Vyberieme len stĺpce, ktoré potrebujeme
+            .order('created_at', { ascending: false })
+            .limit(100);
 
-        // 2. Extrahovanie len dôležitých dát
-        const readings = result.data.map(item => ({
-            time: item.data.timestamp,
-            value: item.data.value,
+        if (error) throw error;
+
+        // Vrátenie dát pre frontend
+        const readings = data.map(item => ({
+            time: new Date(item.created_at).getTime(), // Konverzia na milisekundy pre JS
+            value: item.value,
         }));
 
         return {
@@ -30,7 +33,7 @@ exports.handler = async (event, context) => {
         console.error('Chyba pri čítaní dát:', error);
         return {
             statusCode: 500,
-            body: JSON.stringify({ error: 'Chyba pri čítaní z databázy' }),
+            body: JSON.stringify({ error: 'Chyba pri čítaní z databázy', details: error.message }),
         };
     }
 };
