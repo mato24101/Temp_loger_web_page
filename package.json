@@ -1,1 +1,12 @@
-npm install @supabase/supabase-js
+{
+  "name": "teplotna_databaza",
+  "version": "1.0.0",
+  "description": "Serverless teplotná databáza pre ESP32",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "dependencies": {
+    "@supabase/supabase-js": "^2.39.3"
+  }
+}
