@@ -6,6 +6,7 @@ const { createClient } = require('@supabase/supabase-js');
 const supabaseUrl = process.env.SUPABASE_URL;
 // Používame tajný Service Role Key, ktorý nikdy neuvidí klient (ESP32)
 const supabaseKey = process.env.SUPABASE_SERVICE_KEY; 
+const expectedApiKey = process.env.ESP32_API_KEY; // <-- Environmentálna premenná, ktorú musíš nastaviť na Netlify!
 
 const supabase = createClient(supabaseUrl, supabaseKey);
 
