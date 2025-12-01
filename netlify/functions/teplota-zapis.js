@@ -14,6 +14,23 @@ exports.handler = async (event) => {
         return { statusCode: 405, body: 'Metóda nie je povolená' };
     }
 
+    // -------------------------------------------------------------
+    // KONTROLA AUTENTIFIKÁCIE: Netlify funkcia overuje ESP32 kľúč
+    // -------------------------------------------------------------
+    const actualApiKey = event.headers['x-api-key'];
+
+    if (!actualApiKey || actualApiKey !== expectedApiKey) {
+        // Ak kľúč chýba alebo je nesprávny, vrátime 401
+        console.warn('Pokus o neautorizovaný prístup. Očakávaný kľúč:', expectedApiKey); 
+        console.warn('Prijatý kľúč:', actualApiKey);
+        
+        return { 
+            statusCode: 401, 
+            body: JSON.stringify({ message: 'Neoprávnený prístup. Chýba alebo je nesprávny X-API-Key.' }) 
+        };
+    }
+    // -------------------------------------------------------------
+
     try {
         const data = JSON.parse(event.body);
         const { teplota } = data; // Očakávame dáta vo formáte {"teplota": 25.5}
