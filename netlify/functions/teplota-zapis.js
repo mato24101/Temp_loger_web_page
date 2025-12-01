@@ -17,7 +17,7 @@ exports.handler = async (event) => {
     // -------------------------------------------------------------
     // KONTROLA AUTENTIFIKÁCIE: Netlify funkcia overuje ESP32 kľúč
     // -------------------------------------------------------------
-    const actualApiKey = event.headers['x-api-key'];
+    const actualApiKey = event.headers['ESP32_API_KEY'];
 
     if (!actualApiKey || actualApiKey !== expectedApiKey) {
         // Ak kľúč chýba alebo je nesprávny, vrátime 401
