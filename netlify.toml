@@ -1,0 +1,9 @@
+[dev]
+  command = ""
+  port = 8888
+  functionsPort = 9999
+  targetPort = 3999
+  publish = "."
+
+[functions]
+  directory = "netlify/functions/"
