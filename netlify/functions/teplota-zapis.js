@@ -34,16 +34,23 @@ exports.handler = async (event) => {
 
     try {
         const data = JSON.parse(event.body);
-        const { teplota } = data; // Očakávame dáta vo formáte {"teplota": 25.5}
+        // Očakávame dáta z ESP32 ako 'teplota' a 'vlhkost'
+        const { teplota, vlhkost } = data; 
 
-        if (teplota === undefined) {
-             return { statusCode: 400, body: 'Chýba pole "teplota"' };
+        if (teplota === undefined || vlhkost === undefined) {
+             return { 
+                 statusCode: 400, 
+                 body: JSON.stringify({ message: 'Chýbajú polia "teplota" alebo "vlhkost" v tele požiadavky' }) 
+             };
         }
 
-        // Vloženie dát do tabuľky 'readings'
+        // AKTUALIZÁCIA: Vloženie dát do stĺpcov 'temperature' a 'humidity'
         const { error } = await supabase
             .from('readings')
-            .insert({ value: parseFloat(teplota) }); // created_at sa pridá automaticky
+            .insert({ 
+                temperature: parseFloat(teplota), 
+                humidity: parseFloat(vlhkost)    
+            }); // created_at sa pridá automaticky
 
         if (error) throw error;
 

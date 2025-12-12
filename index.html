@@ -3,24 +3,50 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>ESP32 Teplotná Databáza</title>
-    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+    <title>ESP32 Teplotná a Vlhkostná Databáza</title>
+    <!-- Nahradenie Chart.js za ApexCharts -->
+    <script src="https://cdn.jsdelivr.net/npm/apexcharts"></script> 
     <style>
-        body { font-family: sans-serif; display: flex; justify-content: center; padding: 20px; background-color: #f4f4f4; }
-        .container { width: 80%; max-width: 900px; background: white; padding: 20px; border-radius: 8px; box-shadow: 0 4px 6px rgba(0,0,0,0.1); }
-        h1 { text-align: center; color: #333; }
+        body { 
+            font-family: 'Inter', sans-serif; 
+            display: flex; 
+            justify-content: center; 
+            padding: 20px; 
+            background-color: #f4f4f4; 
+        }
+        .container { 
+            width: 95%; 
+            max-width: 1200px; 
+            background: white; 
+            padding: 20px; 
+            border-radius: 12px; 
+            box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1); 
+            min-height: 500px;
+        }
+        h1 { 
+            text-align: center; 
+            color: #1f2937; 
+            margin-bottom: 20px; 
+        }
+        @media (max-width: 768px) {
+            .container { width: 100%; padding: 10px; border-radius: 0; }
+        }
+        #dataGraf {
+            margin-top: 20px;
+        }
     </style>
 </head>
 <body>
     <div class="container">
-        <h1>Aktuálne Teplotné Záznamy</h1>
-        <canvas id="teplotaGraf"></canvas>
-        <p id="status" style="text-align: center; color: gray;"></p>
+        <h1>Aktuálne Záznamy: Teplota a Vlhkosť</h1>
+        <!-- Div pre ApexCharts -->
+        <div id="dataGraf"></div> 
+        <p id="status" style="text-align: center; color: gray; margin-top: 20px;"></p>
     </div>
 
     <script>
-        const API_URL = '/.netlify/functions/teplota-citaj'; // Volanie Netlify Function
-        let teplotaGraf; // Premenná pre inštanciu grafu
+        const API_URL = '/.netlify/functions/teplota-citaj'; 
+        let apexChart = null; // Premenná pre inštanciu ApexCharts
 
         async function nacitajACitujDatu() {
             const statusElement = document.getElementById('status');
@@ -35,15 +61,31 @@
 
                 if (data.length === 0) {
                     statusElement.textContent = 'Zatiaľ neboli zaznamenané žiadne dáta.';
+                    if (apexChart) {
+                        apexChart.destroy();
+                        apexChart = null;
+                    }
                     return;
                 }
 
-                // Dáta sú vo formáte [{time: 1672531200000, value: 25.5}, ...]
-                const labels = data.map(item => new Date(item.time).toLocaleTimeString('sk-SK', {hour: '2-digit', minute:'2-digit', day: 'numeric', month: 'numeric'}));
-                const hodnoty = data.map(item => item.value);
+                // Dáta sú už zoradené od najstarších po najnovšie vďaka Netlify funkcii.
+                
+                // Konverzia dát do formátu pre ApexCharts: [{x: timestamp, y: value}, ...]
+                const teplotaSeria = data.map(item => ({
+                    x: item.time, // Timestamp v milisekundách
+                    y: item.teplota 
+                }));
+                
+                const vlhkostSeria = data.map(item => ({
+                    x: item.time,
+                    y: item.vlhkost
+                }));
 
-                vykresliGraf(labels, hodnoty);
-                statusElement.textContent = `Posledná aktualizácia: ${new Date().toLocaleTimeString('sk-SK')}`;
+                vykresliGraf(teplotaSeria, vlhkostSeria);
+                
+                // Získanie času posledného záznamu (posledný prvok v zoradenom poli)
+                const lastReadingTime = new Date(data[data.length - 1].time).toLocaleTimeString('sk-SK', {hour: '2-digit', minute:'2-digit', day: 'numeric', month: 'numeric'});
+                statusElement.textContent = `Posledná aktualizácia záznamu: ${lastReadingTime} (Zoradené: najstaršie vľavo, najnovšie vpravo)`;
 
             } catch (error) {
                 console.error('Chyba pri získavaní dát:', error);
@@ -51,39 +93,119 @@
             }
         }
 
-        function vykresliGraf(labels, data) {
-            const ctx = document.getElementById('teplotaGraf').getContext('2d');
-
-            // Ak graf už existuje, zničíme ho, aby sme ho mohli prekresliť
-            if (teplotaGraf) {
-                teplotaGraf.destroy();
-            }
-
-            teplotaGraf = new Chart(ctx, {
-                type: 'line',
-                data: {
-                    labels: labels,
-                    datasets: [{
-                        label: 'Teplota (°C)',
-                        data: data,
-                        borderColor: 'rgb(75, 192, 192)',
-                        tension: 0.1,
-                        fill: false
-                    }]
+        function vykresliGraf(teplotaSeria, vlhkostSeria) {
+            const options = {
+                series: [{
+                    name: "Teplota (°C)",
+                    data: teplotaSeria,
                 },
-                options: {
-                    responsive: true,
-                    scales: {
-                        y: {
-                            beginAtZero: false,
-                            title: {
-                                display: true,
-                                text: 'Teplota (°C)'
-                            }
-                        }
+                {
+                    name: "Vlhkosť (%)",
+                    data: vlhkostSeria,
+                }],
+                chart: {
+                    id: 'realtime-logger',
+                    height: 500,
+                    type: 'line',
+                    toolbar: {
+                        show: true,
+                    },
+                    zoom: {
+                        enabled: true // Povolený zoom
                     }
+                },
+                dataLabels: {
+                    enabled: false
+                },
+                stroke: {
+                    curve: 'smooth',
+                    width: [4, 4] 
+                },
+                colors: ['#EF4444', '#3B82F6'], // Červená pre Teplotu, Modrá pre Vlhkosť
+                xaxis: {
+                    type: 'datetime', // Použijeme datetime pre timestampy
+                    labels: {
+                        datetimeFormatter: {
+                            year: 'yyyy',
+                            month: 'MMM \'yy',
+                            day: 'dd MMM',
+                            hour: 'HH:mm',
+                        },
+                        style: {
+                            fontSize: '12px',
+                        },
+                    },
+                    title: {
+                        text: 'Čas merania',
+                    },
+                    tooltip: {
+                        enabled: false // Zakážeme tooltip na X-osi, použijeme len jeden spoločný
+                    }
+                },
+                yaxis: [
+                    {
+                        // Ľavá os pre Teplotu
+                        axisTicks: { show: true, },
+                        axisBorder: { show: true, color: '#EF4444' },
+                        labels: {
+                            style: { colors: '#EF4444', },
+                            formatter: (val) => `${val ? val.toFixed(1) : ''}°C`
+                        },
+                        title: {
+                            text: "Teplota (°C)",
+                            style: { color: '#EF4444', }
+                        },
+                        // Zabezpečíme, aby os nezačínala príliš nízko
+                        min: teplotaSeria.length > 0 ? Math.floor(Math.min(...teplotaSeria.map(d => d.y)) - 2) : undefined,
+                        max: teplotaSeria.length > 0 ? Math.ceil(Math.max(...teplotaSeria.map(d => d.y)) + 2) : undefined,
+                        tooltip: { enabled: true }
+                    },
+                    {
+                        // Pravá os pre Vlhkosť
+                        seriesName: 'Vlhkosť (%)',
+                        opposite: true, // Zobrazí sa na pravej strane
+                        axisTicks: { show: true, },
+                        axisBorder: { show: true, color: '#3B82F6' },
+                        labels: {
+                            style: { colors: '#3B82F6', },
+                            formatter: (val) => `${val ? val.toFixed(1) : ''}%`
+                        },
+                        title: {
+                            text: "Vlhkosť (%)",
+                            style: { color: '#3B82F6', }
+                        },
+                        min: 0, 
+                        max: 100 
+                    }
+                ],
+                tooltip: {
+                    shared: true,
+                    intersect: false,
+                    x: {
+                        format: 'dd.MM HH:mm:ss'
+                    }
+                },
+                legend: {
+                    horizontalAlign: 'left',
+                    offsetX: 40
+                },
+                grid: {
+                    borderColor: '#e7e7e7',
+                    row: {
+                        colors: ['#f3f3f3', 'transparent'],
+                        opacity: 0.5
+                    },
                 }
-            });
+            };
+            
+            // Ak graf už existuje, len aktualizujeme dáta
+            if (apexChart) {
+                apexChart.updateSeries(options.series);
+            } else {
+                // Inak vytvoríme nový graf
+                apexChart = new ApexCharts(document.querySelector("#dataGraf"), options);
+                apexChart.render();
+            }
         }
 
         // Spustenie funkcie pri načítaní stránky

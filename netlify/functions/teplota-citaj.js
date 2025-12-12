@@ -9,11 +9,12 @@ const supabase = createClient(supabaseUrl, supabaseKey);
 
 exports.handler = async () => {
     try {
-        // Získanie posledných 100 záznamov, zoradených od najnovších
+        // AKTUALIZÁCIA: Získanie stĺpcov 'temperature' a 'humidity'
+        // Zoradenie vzostupne (ascending: true) pre zobrazenie najstarších dát vľavo na grafe.
         const { data, error } = await supabase
             .from('readings')
-            .select('created_at, value') // Vyberieme len stĺpce, ktoré potrebujeme
-            .order('created_at', { ascending: false })
+            .select('created_at, temperature, humidity') // <--- ZMENA TU: Používame 'temperature' a 'humidity'
+            .order('created_at', { ascending: true }) 
             .limit(100);
 
         if (error) throw error;
@@ -21,7 +22,8 @@ exports.handler = async () => {
         // Vrátenie dát pre frontend
         const readings = data.map(item => ({
             time: new Date(item.created_at).getTime(), // Konverzia na milisekundy pre JS
-            value: item.value,
+            teplota: item.temperature, // Mapujeme 'temperature' na 'teplota' pre frontend logiku
+            vlhkost: item.humidity,    // Mapujeme 'humidity' na 'vlhkost' pre frontend logiku
         }));
 
         return {
