@@ -1,0 +1,723 @@
+<!DOCTYPE html>
+<html lang="sk">
+<head>
+    <meta charset="UTF-8">
+    <!-- OPRAVA: Pridané user-scalable=no na zakázanie približovania na mobiloch -->
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>ESP32 Databáza Senzorov</title>
+    <!-- Používame ApexCharts pre grafy -->
+    <script src="https://cdn.jsdelivr.net/npm/apexcharts"></script> 
+    <!-- Používame Font Awesome pre ikony (Menu, Nastavenia, Graf) -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
+    <style>
+        /* Globalne štýly */
+        body { 
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif; 
+            margin: 0;
+            display: flex; 
+            flex-direction: column; 
+            background-color: #f4f4f4; 
+            min-height: 100vh;
+        }
+
+        .app-container {
+            flex-grow: 1;
+            display: flex;
+            width: 100%;
+        }
+
+        /* ---------- DESKTOP BOČNÉ MENU (PRE > 768px) ---------- */
+        .sidebar {
+            background-color: #2D3748; 
+            color: white;
+            min-height: 100vh;
+            width: 70px; /* Predvolená (zatvorená) šírka pre desktop */
+            position: sticky;
+            top: 0;
+            left: 0;
+            box-shadow: 4px 0 10px rgba(0, 0, 0, 0.1);
+            z-index: 1000;
+            overflow: hidden; 
+            transition: width 0.3s ease; /* Animácia otvárania/zatvárania */
+        }
+        
+        .sidebar.expanded {
+            width: 250px; /* Rozšírená šírka */
+        }
+
+        /* Sekcia s logom a menu ikonou */
+        .header-section {
+            padding: 15px;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            border-bottom: 1px solid #4A5568;
+        }
+
+        .logo-section {
+            display: flex;
+            align-items: center;
+            font-size: 1.5rem;
+            font-weight: bold;
+            opacity: 0; /* Skryté v úzkom stave */
+            transition: opacity 0.3s;
+        }
+        
+        .sidebar.expanded .logo-section {
+            opacity: 1; /* Zobrazené v rozšírenom stave */
+        }
+
+        .menu-toggle {
+            cursor: pointer;
+            font-size: 1.2rem;
+            width: 40px;
+            height: 40px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+        
+        .main-menu { list-style: none; padding: 0; margin: 0; }
+        
+        .menu-item {
+            display: flex;
+            align-items: center;
+            padding: 15px;
+            cursor: pointer;
+            transition: background-color 0.2s;
+            white-space: nowrap;
+        }
+        
+        .menu-item:hover { background-color: #4A5568; }
+        
+        .menu-item i {
+            font-size: 1.2rem;
+            text-align: center;
+            width: 40px; /* Fixná šírka pre ikonu */
+        }
+
+        .menu-item span {
+            margin-left: 10px;
+            display: none; /* Skryté predvolene */
+            opacity: 0;
+            transition: opacity 0.3s;
+        }
+        
+        .sidebar.expanded .menu-item span {
+            display: inline; /* Zobrazené, keď je rozšírené */
+            opacity: 1;
+        }
+        
+        .menu-item.active {
+            background-color: #3B82F6;
+            color: white;
+        }
+        
+        /* ---------- OBSAH GRAFU (CONTENT) ---------- */
+        .content {
+            flex-grow: 1;
+            padding: 20px;
+            min-width: 0;
+            padding-bottom: 80px; /* Priestor pre mobilnú navigačnú lištu */
+        }
+        
+        .chart-card {
+            background: white; 
+            padding: 20px; 
+            border-radius: 12px; 
+            box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1); 
+            width: 100%;
+            box-sizing: border-box; 
+        }
+
+        #dataGraf {
+             min-height: 300px; 
+             width: 100%;
+        }
+
+        h1 { 
+            text-align: center; 
+            color: #1f2937; 
+            margin-bottom: 20px; 
+            font-size: 1.8rem;
+        }
+
+        /* Mobilná navigácia (pre < 768px) */
+        .mobile-nav {
+            position: fixed;
+            bottom: 0;
+            left: 0;
+            width: 100%;
+            height: 60px;
+            background-color: white;
+            box-shadow: 0 -4px 10px rgba(0, 0, 0, 0.1);
+            display: none; 
+            justify-content: space-around;
+            align-items: center;
+            z-index: 1010;
+        }
+
+        .mobile-nav-item {
+            text-align: center;
+            padding: 5px 10px;
+            color: #4A5568;
+            cursor: pointer;
+            transition: color 0.2s;
+        }
+
+        .mobile-nav-item i {
+            font-size: 1.4rem;
+            margin-bottom: 3px;
+        }
+
+        .mobile-nav-item span {
+            font-size: 0.7rem;
+            display: block;
+        }
+
+        .mobile-nav-item.active {
+            color: #3B82F6;
+        }
+        
+        /* ---------- MODÁLNE OKNO PRE NASTAVENIA ---------- */
+        .modal {
+            display: none; 
+            position: fixed;
+            z-index: 2000;
+            left: 0;
+            top: 0;
+            width: 100%;
+            height: 100%;
+            background-color: rgba(0,0,0,0.6); 
+            backdrop-filter: blur(5px);
+            -webkit-backdrop-filter: blur(5px);
+            /* display: flex; nahradené aktivnou triedou */
+            justify-content: center;
+            align-items: center;
+        }
+        
+        .modal.active {
+            display: flex;
+        }
+
+        .modal-content {
+            background-color: #fefefe;
+            padding: 30px;
+            border-radius: 12px;
+            width: 90%; 
+            max-width: 450px; 
+            box-shadow: 0 5px 20px rgba(0,0,0,0.4);
+            position: relative;
+            max-height: 90vh; 
+            overflow-y: auto;
+        }
+
+        .close-button {
+            color: #aaa;
+            float: right;
+            font-size: 28px;
+            font-weight: bold;
+            cursor: pointer;
+            position: absolute;
+            top: 10px;
+            right: 20px;
+            background: none;
+            border: none;
+        }
+        
+        /* Spoločné štýly pre filtre a akcie */
+        .filter-section { margin-bottom: 25px; padding: 10px 0; }
+        .filter-section h3 { font-size: 1.2rem; margin-top: 0; margin-bottom: 15px; color: #1f2937; padding-bottom: 5px; border-bottom: 2px solid #3B82F6; }
+        .filter-group { display: flex; flex-direction: column; margin-bottom: 15px; }
+        .filter-group label { font-weight: 500; margin-bottom: 5px; color: #4B5563; font-size: 1rem; }
+        input[type="datetime-local"], .filter-actions button { width: 100%; padding: 10px; border-radius: 6px; box-sizing: border-box; }
+        input[type="datetime-local"] { border: 1px solid #D1D5DB; transition: border-color 0.2s; }
+        .checkbox-group label { display: flex; align-items: center; margin-bottom: 10px; font-size: 1rem; color: #1F2937; cursor: pointer; }
+        .checkbox-group input[type="checkbox"] { margin-right: 10px; width: 20px; height: 20px; accent-color: #3B82F6; }
+        .filter-actions button { border: none; cursor: pointer; font-weight: bold; transition: background-color 0.2s, box-shadow 0.2s; margin-top: 10px; }
+        .btn-apply { background-color: #48BB78; color: white; }
+        .btn-apply:hover { background-color: #38A169; }
+        .btn-reset { background-color: #6B7280; color: white; }
+        .btn-reset:hover { background-color: #4B5563; }
+
+
+        /* ---------- MEDIA QUERIES (RESPONZIVITA) ---------- */
+        @media (max-width: 768px) {
+            /* Skryť desktopový sidebar */
+            .sidebar {
+                display: none;
+            }
+            /* Zobraziť mobilnú navigáciu */
+            .mobile-nav {
+                display: flex;
+            }
+            /* Upraviť hlavný obsah, aby nebol stlačený */
+            .app-container {
+                flex-direction: column;
+            }
+            .content {
+                padding: 10px;
+                padding-bottom: 70px; /* Aby obsah nezakrývala mobilná lišta */
+            }
+            .chart-card {
+                padding: 15px;
+            }
+            h1 {
+                font-size: 1.5rem;
+            }
+        }
+
+        @media (min-width: 769px) {
+            /* Na desktope chceme flex-row pre sidebar + content */
+            .app-container {
+                flex-direction: row;
+            }
+            /* Na desktope chceme skryť mobilné položky navigácie */
+            .mobile-nav {
+                display: none;
+            }
+        }
+    </style>
+</head>
+<body>
+    
+    <div class="app-container">
+        <!-- Bočný panel (Sidebar) - Predvolene zatvorený na Desktope -->
+        <!-- Dôležité: Načítava sa bez triedy 'expanded' -->
+        <nav class="sidebar" id="sidebar">
+            <div class="header-section">
+                <!-- Tlačidlo na prepínanie stavu (Zatvorené/Otvorené) -->
+                <div class="logo-section">
+                    <i class="fa-solid fa-chart-line"></i>
+                    <span>Monitoring Senzorov</span>
+                </div>
+                <div class="menu-toggle" onclick="toggleSidebar()">
+                    <i class="fa-solid fa-bars"></i>
+                </div>
+            </div>
+
+            <ul class="main-menu">
+                <li class="menu-item active" id="graphItem">
+                    <i class="fa-solid fa-chart-area"></i>
+                    <span>Prehľad (Graf)</span>
+                </li>
+                <!-- Otvára Modálne okno -->
+                <li class="menu-item" id="settingsItem" onclick="openModal()">
+                    <i class="fa-solid fa-sliders"></i>
+                    <span>Nastavenia Dát</span>
+                </li>
+            </ul>
+        </nav>
+        
+        <!-- Hlavný obsah -->
+        <main class="content">
+            <div class="chart-card">
+                <h1>Aktuálne Záznamy: Teplota a Vlhkosť</h1>
+                
+                <!-- Div pre ApexCharts -->
+                <div id="dataGraf"></div> 
+                <p id="status" style="text-align: center; color: gray; margin-top: 20px;"></p>
+            </div>
+        </main>
+    </div>
+
+    <!-- Modálne Okno pre Nastavenia (pre Mobil aj Desktop) -->
+    <div id="settingsModal" class="modal">
+        <div class="modal-content">
+            <button class="close-button" onclick="closeModal()">&times;</button>
+            <h2>Nastavenia Zobrazenia Dát</h2>
+
+            <!-- Tieto polia slúžia ako JEDINÝ zdroj pre dáta -->
+            <input type="hidden" id="dateFrom">
+            <input type="hidden" id="dateTo">
+            <input type="hidden" id="checkTeplota" checked>
+            <input type="hidden" id="checkVlhkost" checked>
+
+            <div class="filter-section">
+                <h3>Časový Filter</h3>
+                <div class="filter-group">
+                    <label for="dateFromInput">Od (Dátum a Čas):</label>
+                    <input type="datetime-local" id="dateFromInput">
+                </div>
+                <div class="filter-group">
+                    <label for="dateToInput">Do (Dátum a Čas):</label>
+                    <input type="datetime-local" id="dateToInput">
+                </div>
+            </div>
+
+            <div class="filter-section">
+                <h3>Zobrazené Dáta (Senzory)</h3>
+                <div class="checkbox-group">
+                    <label>
+                        <input type="checkbox" id="checkTeplotaInput" checked> Teplota (°C)
+                    </label>
+                    <label>
+                        <input type="checkbox" id="checkVlhkostInput" checked> Vlhkosť (%)
+                    </label>
+                </div>
+            </div>
+            
+            <div class="filter-actions">
+                <button class="btn-apply" onclick="applyFiltersFromModal()">Aplikovať Filter</button>
+                <button class="btn-reset" onclick="resetFilter()">Reset Filtrov (Posledných 500)</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Mobilná Navigačná Lišta (pre < 768px) -->
+    <nav class="mobile-nav">
+        <div class="mobile-nav-item active" id="mobileNavGraph">
+            <i class="fa-solid fa-chart-area"></i>
+            <span>Prehľad</span>
+        </div>
+        <div class="mobile-nav-item" id="mobileNavSettings" onclick="openModal()">
+            <i class="fa-solid fa-sliders"></i>
+            <span>Nastavenia</span>
+        </div>
+    </nav>
+
+
+    <script>
+        const API_URL = '/.netlify/functions/teplota-citaj'; 
+        let apexChart = null; 
+        let allData = []; 
+        let autoUpdateInterval;
+
+        // ---------- FUNKCIE PRE RESPONSÍVNY DIZAJN A MODÁLNE OKNO ----------
+        
+        // Funkcia na prepínanie stavu postranného panela
+        function toggleSidebar() {
+            const sidebar = document.getElementById('sidebar');
+            // Prepína triedu 'expanded', ktorá mení šírku cez CSS
+            sidebar.classList.toggle('expanded');
+        }
+        
+        function toggleMenuItem(itemId, activate) {
+            const item = document.getElementById(itemId);
+            if (item) {
+                item.classList.toggle('active', activate);
+            }
+        }
+        
+        // Otvorenie modálneho okna (pre Mobil a Desktop)
+        function openModal() {
+            const modal = document.getElementById('settingsModal');
+            modal.classList.add('active');
+            
+            // Synchronizácia dát z "neviditeľných" polí do modálnych polí pri otvorení
+            document.getElementById('dateFromInput').value = document.getElementById('dateFrom').value;
+            document.getElementById('dateToInput').value = document.getElementById('dateTo').value;
+            document.getElementById('checkTeplotaInput').checked = document.getElementById('checkTeplota').checked;
+            document.getElementById('checkVlhkostInput').checked = document.getElementById('checkVlhkost').checked;
+            
+            // Zvýraznenie na mobilnej lište / desktope
+            if (window.innerWidth <= 768) {
+                toggleMenuItem('mobileNavSettings', true);
+                toggleMenuItem('mobileNavGraph', false);
+            } else {
+                toggleMenuItem('settingsItem', true);
+                toggleMenuItem('graphItem', false);
+            }
+        }
+
+        // Zatvorenie modálneho okna
+        function closeModal() {
+            document.getElementById('settingsModal').classList.remove('active');
+            
+            // Zvýraznenie na mobilnej lište / desktope
+            if (window.innerWidth <= 768) {
+                toggleMenuItem('mobileNavSettings', false);
+                toggleMenuItem('mobileNavGraph', true);
+            } else {
+                toggleMenuItem('settingsItem', false);
+                toggleMenuItem('graphItem', true);
+            }
+        }
+        
+        // Ak sa klikne mimo modálneho okna, zatvorí sa
+        window.onclick = function(event) {
+            const modal = document.getElementById('settingsModal');
+            // Kontroluje, či kliknutie bolo na modálnej ploche (ale nie na obsahu modálu)
+            if (event.target === modal) {
+                closeModal();
+            }
+        }
+
+        // Aplikovanie filtrov z modálneho okna
+        function applyFiltersFromModal() {
+            // Synchronizácia modálnych hodnôt späť do "neviditeľných" primárnych polí
+            document.getElementById('dateFrom').value = document.getElementById('dateFromInput').value;
+            document.getElementById('dateTo').value = document.getElementById('dateToInput').value;
+            document.getElementById('checkTeplota').checked = document.getElementById('checkTeplotaInput').checked;
+            document.getElementById('checkVlhkost').checked = document.getElementById('checkVlhkostInput').checked;
+            
+            nacitajACitujDatu(true);
+            closeModal();
+        }
+
+        // ---------- FUNKCIE PRE DÁTA A GRAFY ----------
+
+        function formatDateTime(datetimeLocalValue) {
+            if (!datetimeLocalValue) return null;
+            // Presné formátovanie, aby Supabase rozumela - UTC konverzia je dôležitá
+            const date = new Date(datetimeLocalValue);
+            return date.toISOString();
+        }
+
+        async function nacitajACitujDatu(isFilterAction = false) {
+            const statusElement = document.getElementById('status');
+            statusElement.textContent = 'Načítavam dáta...';
+            
+            let url = API_URL;
+            const params = new URLSearchParams();
+
+            // Používame primárne (neviditeľné) polia ako zdroj pre filter
+            const dateFrom = document.getElementById('dateFrom').value;
+            const dateTo = document.getElementById('dateTo').value;
+            
+            const fromFormatted = formatDateTime(dateFrom);
+            const toFormatted = formatDateTime(dateTo);
+
+            if (fromFormatted) { params.append('from', fromFormatted); }
+            if (toFormatted) { params.append('to', toFormatted); }
+            
+            if (params.toString()) {
+                url = `${API_URL}?${params.toString()}`;
+            }
+            
+            // Logika auto-aktualizácie
+            if (isFilterAction && (fromFormatted || toFormatted)) {
+                 // Ak je nastavený akýkoľvek filter, zrušíme auto-aktualizáciu
+                 clearInterval(autoUpdateInterval);
+            } else if (isFilterAction && !fromFormatted && !toFormatted) {
+                 // Pri resete obnovíme automatickú aktualizáciu
+                 clearInterval(autoUpdateInterval); 
+                 autoUpdateInterval = setInterval(() => nacitajACitujDatu(false), 300000);
+            }
+
+            try {
+                const response = await fetch(url);
+                if (!response.ok) {
+                    throw new Error(`HTTP chyba! Status: ${response.status}`);
+                }
+                const data = await response.json();
+                
+                allData = data; 
+                vykresliGrafZDat(); 
+
+                if (data.length === 0) {
+                    statusElement.textContent = 'Pre vybrané časové obdobie neboli nájdené žiadne dáta.';
+                    // Dôležité: Zničiť graf, ak nie sú dáta, aby sa predišlo chybám vykresľovania
+                    if (apexChart) { apexChart.destroy(); apexChart = null; }
+                    return;
+                }
+
+                const firstReadingTime = new Date(data[0].time).toLocaleTimeString('sk-SK', {hour: '2-digit', minute:'2-digit', day: 'numeric', month: 'numeric'});
+                const lastReadingTime = new Date(data[data.length - 1].time).toLocaleTimeString('sk-SK', {hour: '2-digit', minute:'2-digit', day: 'numeric', month: 'numeric'});
+                
+                let message = `Zobrazené dáta od: ${firstReadingTime} do: ${lastReadingTime}. Záznamov: ${data.length}`;
+                
+                if (!fromFormatted && !toFormatted) {
+                     message = `Posledná aktualizácia záznamu: ${lastReadingTime}. Zobrazených záznamov: ${data.length} (posledných 500).`;
+                }
+                
+                statusElement.textContent = message;
+
+            } catch (error) {
+                console.error('Chyba pri získavaní dát:', error);
+                statusElement.textContent = `Chyba pri načítavaní dát: ${error.message}`;
+            }
+        }
+        
+        function vykresliGrafZDat() {
+            // Kontrola, či kontajner pre graf existuje
+            const chartElement = document.querySelector("#dataGraf");
+            if (!chartElement) {
+                console.error("Chýba element #dataGraf.");
+                return;
+            }
+
+            if (allData.length === 0) {
+                 if (apexChart) { apexChart.destroy(); apexChart = null; }
+                 chartElement.innerHTML = ''; // Vyčistenie divu
+                 return;
+            }
+
+            // Kontroluje stav checkboxov z primárnych (neviditeľných) polí
+            const showTeplota = document.getElementById('checkTeplota').checked;
+            const showVlhkost = document.getElementById('checkVlhkost').checked;
+            
+            const series = [];
+            let minTemp = Infinity;
+            let maxTemp = -Infinity;
+            
+            if (showTeplota || showVlhkost) {
+                // ApexCharts preferuje dáta ako [{x: time_ms, y: value}]
+                const teplotaSeria = allData.map(item => ({ x: item.time, y: item.teplota }));
+                const vlhkostSeria = allData.map(item => ({ x: item.time, y: item.vlhkost }));
+
+                if (showTeplota) {
+                    series.push({ name: "Teplota (°C)", data: teplotaSeria, color: '#EF4444' });
+                    const tempValues = teplotaSeria.map(d => d.y).filter(y => y !== null && y !== undefined);
+                    if (tempValues.length > 0) {
+                         minTemp = Math.min(...tempValues);
+                         maxTemp = Math.max(...tempValues);
+                    }
+                }
+                
+                if (showVlhkost) {
+                    series.push({ name: "Vlhkosť (%)", data: vlhkostSeria, color: '#3B82F6'});
+                }
+            } else {
+                 if (apexChart) { apexChart.destroy(); apexChart = null; }
+                 chartElement.innerHTML = ''; // Vyčistenie divu
+                 document.getElementById('status').textContent = 'Vyberte aspoň jednu sériu dát na zobrazenie.';
+                 return;
+            }
+            
+            const yaxisConfig = [];
+            
+            if (showTeplota) {
+                yaxisConfig.push({
+                    axisTicks: { show: true, },
+                    axisBorder: { show: true, color: '#EF4444' },
+                    labels: { style: { colors: '#EF4444', }, formatter: (val) => `${val ? val.toFixed(1) : ''}°C` },
+                    title: { text: "Teplota (°C)", style: { color: '#EF4444', } },
+                    min: minTemp !== Infinity ? Math.floor(minTemp - 2) : undefined,
+                    max: maxTemp !== -Infinity ? Math.ceil(maxTemp + 2) : undefined,
+                });
+            }
+
+            if (showVlhkost) {
+                yaxisConfig.push({
+                    seriesName: 'Vlhkosť (%)',
+                    opposite: showTeplota, // Ak je zobrazená aj teplota, vlhkosť pôjde napravo
+                    axisTicks: { show: true, },
+                    axisBorder: { show: true, color: '#3B82F6' },
+                    labels: { style: { colors: '#3B82F6', }, formatter: (val) => `${val ? val.toFixed(1) : ''}%` },
+                    title: { text: "Vlhkosť (%)", style: { color: '#3B82F6', } },
+                    min: 0, 
+                    max: 100 
+                });
+            }
+
+            const options = {
+                series: series,
+                chart: {
+                    id: 'realtime-logger',
+                    height: 500,
+                    type: 'line',
+                    toolbar: { show: true, },
+                    zoom: { enabled: true }
+                },
+                dataLabels: { enabled: false },
+                stroke: { curve: 'smooth', width: series.map(() => 4) },
+                colors: series.map(s => s.color),
+                xaxis: {
+                    type: 'datetime', 
+                    labels: {
+                        datetimeFormatter: {
+                            year: 'yyyy', month: 'MMM \'yy', day: 'dd MMM', hour: 'HH:mm',
+                        },
+                        style: { fontSize: '12px', },
+                    },
+                    title: { text: 'Čas merania', },
+                    tooltip: { enabled: false }
+                },
+                yaxis: yaxisConfig,
+                tooltip: {
+                    shared: true,
+                    intersect: false,
+                    x: { format: 'dd.MM HH:mm:ss' }
+                },
+                legend: {
+                    horizontalAlign: 'left',
+                    offsetX: 40
+                },
+                grid: {
+                    borderColor: '#e7e7e7',
+                    row: { colors: ['#f3f3f3', 'transparent'], opacity: 0.5 },
+                },
+                // Pridanie responzívnych nastavení pre menšie obrazovky
+                responsive: [{
+                    breakpoint: 768,
+                    options: {
+                        chart: {
+                            height: 350, 
+                        },
+                        legend: {
+                            position: 'bottom'
+                        },
+                        yaxis: yaxisConfig.map(y => ({
+                            ...y,
+                            title: { text: y.title.text.split('(')[0].trim() }
+                        }))
+                    }
+                }]
+            };
+            
+            // OPRAVA PRE MOBILNÉ ZOBRAZENIE: 
+            // Vytvorenie a vykreslenie nového grafu zabezpečí, že sa správne zreferencuje DOM element
+            if (apexChart) {
+                apexChart.destroy(); // Zničíme starý graf
+                apexChart = null;
+            }
+            
+            // Vytvoríme a vykreslíme nový graf s novými dátami/možnosťami
+            apexChart = new ApexCharts(chartElement, options);
+            apexChart.render();
+        }
+
+        // Funkcia na vyčistenie filtrov
+        function resetFilter() {
+            // Resetuje primárne (neviditeľné) polia
+            document.getElementById('dateFrom').value = '';
+            document.getElementById('dateTo').value = '';
+            document.getElementById('checkTeplota').checked = true;
+            document.getElementById('checkVlhkost').checked = true;
+            
+            // Synchronizuje resetované hodnoty do modálneho okna (pre vizuálny feedback)
+            document.getElementById('dateFromInput').value = '';
+            document.getElementById('dateToInput').value = '';
+            document.getElementById('checkTeplotaInput').checked = true;
+            document.getElementById('checkVlhkostInput').checked = true;
+            
+            closeModal();
+            nacitajACitujDatu(true); 
+        }
+
+        // ---------- INICIALIZÁCIA ----------
+
+        window.onload = function() {
+            const sidebar = document.getElementById('sidebar');
+
+            // KĽÚČOVÁ OPRAVA: Zabezpečenie, že na desktope je menu predvolene zatvorené (úzke)
+            if (window.innerWidth > 768) {
+                // Odstránime triedu 'expanded', ak by tam náhodou bola z predošlej chyby
+                sidebar.classList.remove('expanded'); 
+            }
+            
+            // Spustenie funkcie pri načítaní stránky
+            nacitajACitujDatu(false);
+            // Nastavenie automatickej aktualizácie každých 5 minút (300 000 ms)
+            autoUpdateInterval = setInterval(() => nacitajACitujDatu(false), 300000); 
+
+            // Nastavenie počúvania zmien na checkboxoch v modálnom okne
+            document.getElementById('checkTeplotaInput').addEventListener('change', () => {
+                document.getElementById('checkTeplota').checked = document.getElementById('checkTeplotaInput').checked;
+            });
+            document.getElementById('checkVlhkostInput').addEventListener('change', () => {
+                document.getElementById('checkVlhkost').checked = document.getElementById('checkVlhkostInput').checked;
+            });
+            
+            // Pridanie Event Listenera pre zmenu veľkosti okna (aj pre mobilné rotácie)
+            window.addEventListener('resize', () => {
+                // Ak existuje graf, volanie updateOptions by mohlo pomôcť s responzivitou
+                if (apexChart) {
+                     apexChart.updateOptions({});
+                }
+            });
+        }
+    </script>
+</body>
+</html>
