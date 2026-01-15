@@ -1,14 +1,21 @@
 let myChart = null;
 const ctx = document.getElementById('measurementsChart').getContext('2d');
 
+// Elementy filtrov
 const deviceSelect = document.getElementById('deviceFilter');
 const metricSelect = document.getElementById('metricFilter');
 const dateFromInput = document.getElementById('dateFrom');
 const dateToInput = document.getElementById('dateTo');
 const refreshBtn = document.getElementById('refreshBtn');
 const noDataMsg = document.getElementById('noDataMessage');
+const statusInfo = document.getElementById('statusInfo');
 
-// Predvolené časy
+// UI Elementy pre Sidebar
+const sidebar = document.getElementById('sidebar');
+const menuToggle = document.getElementById('menuToggle');
+const overlay = document.getElementById('sidebarOverlay');
+
+// Predvolené časy (posledných 24h)
 const now = new Date();
 const yesterday = new Date();
 yesterday.setHours(yesterday.getHours() - 24);
@@ -16,12 +23,33 @@ dateFromInput.value = yesterday.toISOString().slice(0, 16);
 dateToInput.value = now.toISOString().slice(0, 16);
 
 async function init() {
-    // Načítame dáta (funkcia vráti aj zoznamy pre filtre v jednom balíku alebo ich načítame separátne)
+    setupSidebar();
     await fetchDataAndRender();
+    
     refreshBtn.addEventListener('click', fetchDataAndRender);
+    deviceSelect.addEventListener('change', fetchDataAndRender);
+    metricSelect.addEventListener('change', fetchDataAndRender);
+}
+
+/**
+ * Logika pre mobilné ovládanie sidebar-u
+ */
+function setupSidebar() {
+    const toggle = () => {
+        sidebar.classList.toggle('-translate-x-full');
+        overlay.classList.toggle('hidden');
+    };
+
+    menuToggle.addEventListener('click', toggle);
+    overlay.addEventListener('click', toggle);
 }
 
 async function fetchDataAndRender() {
+    refreshBtn.disabled = true;
+    const originalBtnText = refreshBtn.innerHTML;
+    refreshBtn.textContent = 'Načítavam...';
+    statusInfo.textContent = 'Komunikujem so serverom...';
+
     const params = new URLSearchParams({
         device: deviceSelect.value,
         metric: metricSelect.value,
@@ -30,42 +58,41 @@ async function fetchDataAndRender() {
     });
 
     try {
-        // Volanie Netlify funkcie - cesta smeruje na endpoint definovaný v netlify/functions/read.js
         const response = await fetch(`/.netlify/functions/read?${params}`);
         const result = await response.json();
 
         if (result.error) throw new Error(result.error);
 
-        // Aktualizácia filtrov, ak prišli nové zariadenia/metriky
         updateFiltersUI(result.devices, result.metrics);
         
-        // Ak ešte nie je vybraná žiadna metrika, vyberieme prvú dostupnú zo servera
         const currentMetric = metricSelect.value || result.metrics[0];
         renderChart(result.data, currentMetric);
+        
+        statusInfo.textContent = `OK - ${result.data ? result.data.length : 0} bodov`;
     } catch (err) {
-        console.error('Chyba pri volaní funkcie:', err);
+        console.error('Chyba:', err);
+        statusInfo.textContent = 'Chyba pripojenia';
+    } finally {
+        refreshBtn.disabled = false;
+        refreshBtn.innerHTML = originalBtnText;
     }
 }
 
 function updateFiltersUI(devices, metrics) {
-    // Aktualizácia zariadení
     if (devices) {
         const existingDevices = Array.from(deviceSelect.options).map(opt => opt.value);
         devices.forEach(dev => {
             if (!existingDevices.includes(dev)) {
-                const opt = new Option(dev, dev);
-                deviceSelect.add(opt);
+                deviceSelect.add(new Option(dev, dev));
             }
         });
     }
 
-    // Aktualizácia metrík (názvov meraní z JSONB)
     if (metrics) {
         const existingMetrics = Array.from(metricSelect.options).map(opt => opt.value);
         metrics.forEach(m => {
             if (!existingMetrics.includes(m)) {
-                const opt = new Option(m, m);
-                metricSelect.add(opt);
+                metricSelect.add(new Option(m, m));
             }
         });
     }
@@ -82,7 +109,6 @@ function renderChart(data, metric) {
     noDataMsg.classList.add('hidden');
     document.getElementById('measurementsChart').classList.remove('hidden');
 
-    // Filtrujeme a mapujeme body pre konkrétnu metriku
     const chartPoints = data
         .filter(row => row.data && row.data[metric] !== undefined)
         .map(row => ({
@@ -99,25 +125,37 @@ function renderChart(data, metric) {
                 label: metric,
                 data: chartPoints,
                 borderColor: '#2563eb',
-                backgroundColor: 'rgba(37, 99, 235, 0.1)',
+                backgroundColor: 'rgba(37, 99, 235, 0.05)',
                 borderWidth: 2,
                 fill: true,
-                tension: 0.2,
-                pointRadius: 2
+                tension: 0.1,
+                pointRadius: chartPoints.length > 300 ? 0 : 3,
+                borderJoinStyle: 'round'
             }]
         },
         options: {
             responsive: true,
             maintainAspectRatio: false,
+            animation: false,
             scales: {
                 x: { 
                     type: 'time', 
                     time: { 
-                        unit: 'hour',
-                        displayFormats: { hour: 'HH:mm' }
-                    } 
+                        displayFormats: { 
+                            hour: 'HH:mm',
+                            day: 'dd.LL.'
+                        }
+                    },
+                    grid: { display: false }
                 },
-                y: { title: { display: true, text: 'Hodnota' } }
+                y: { 
+                    title: { display: true, text: 'Hodnota' },
+                    grid: { color: '#f3f4f6' }
+                }
+            },
+            plugins: {
+                legend: { display: true, position: 'top', align: 'end' },
+                tooltip: { intersect: false, mode: 'index' }
             }
         }
     });
